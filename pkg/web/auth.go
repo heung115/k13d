@@ -634,6 +634,8 @@ func (am *AuthManager) DeleteUser(username string) error {
 func (am *AuthManager) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !am.config.Enabled {
+			r.Header.Set("X-Username", "anonymous")
+			r.Header.Set("X-User-Role", "admin")
 			next(w, r)
 			return
 		}
@@ -1657,6 +1659,12 @@ func (am *AuthManager) cleanupExpiredSessions() {
 // CSRFMiddleware validates CSRF tokens for state-changing requests
 func (am *AuthManager) CSRFMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip CSRF check when authentication is disabled
+		if !am.config.Enabled {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Skip CSRF check for safe methods
 		if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
 			next.ServeHTTP(w, r)
