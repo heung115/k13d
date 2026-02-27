@@ -1163,7 +1163,34 @@
 
                 <!-- MCP Tab -->
                 <div id="settings-mcp" class="settings-content" style="display:none;">
+                    <!-- MCP Marketplace -->
                     <div class="settings-section">
+                        <h4>MCP Marketplace</h4>
+                        <p class="settings-description" style="margin-bottom:12px;">Install verified MCP servers with one click. Downloads binaries from GitHub Releases.</p>
+                        <div id="mcp-marketplace-list">
+                            <p style="color:var(--text-secondary);">Loading marketplace...</p>
+                        </div>
+                    </div>
+
+                    <!-- Install Progress Modal -->
+                    <div id="mcp-install-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center;">
+                        <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;width:560px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
+                            <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+                                <h4 style="margin:0;">MCP Server Installation</h4>
+                                <button onclick="closeInstallModal()" style="background:none;border:none;color:var(--text-secondary);font-size:18px;cursor:pointer;">&times;</button>
+                            </div>
+                            <div style="padding:16px 20px;">
+                                <div style="background:var(--bg-primary);border-radius:8px;height:8px;overflow:hidden;margin-bottom:12px;">
+                                    <div id="mcp-install-progress-bar" style="background:var(--accent-blue);height:100%;width:0%;transition:width 0.3s;"></div>
+                                </div>
+                                <div id="mcp-install-progress-text" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">0%</div>
+                            </div>
+                            <div id="mcp-install-logs" style="padding:0 20px 16px;flex:1;overflow-y:auto;max-height:300px;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:var(--bg-primary);margin:0 20px 16px;border-radius:8px;padding:12px;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="margin-top:16px;">
                         <h4>MCP Servers</h4>
                         <p class="settings-description" style="margin-bottom:12px;">Connect to Model Context Protocol servers to extend AI capabilities with additional tools.</p>
 
@@ -1211,15 +1238,6 @@
                         </div>
                     </div>
 
-                    <div class="settings-section" style="margin-top:16px;background:var(--bg-primary);padding:12px;border-radius:8px;">
-                        <h4>Example: Kubernetes MCP Server</h4>
-                        <p class="settings-description" style="font-size:12px;">
-                            To add the <a href="https://github.com/containers/kubernetes-mcp-server" target="_blank" style="color:var(--accent-blue);">kubernetes-mcp-server</a>:<br><br>
-                            <strong>Name:</strong> kubernetes<br>
-                            <strong>Command:</strong> npx<br>
-                            <strong>Args:</strong> -y, @anthropic/mcp-server-kubernetes<br>
-                        </p>
-                    </div>
                 </div>
 
                 <!-- Security/Trivy Settings Tab -->

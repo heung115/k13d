@@ -3153,6 +3153,7 @@ ${escapeHtml(execInfo.result)}</div>
             } else if (tab === 'mcp') {
                 loadMCPServers();
                 loadMCPTools();
+                loadMCPMarketplace();
             } else if (tab === 'admin') {
                 loadAdminUsers();
                 loadAuthStatus();
@@ -3888,6 +3889,7 @@ ${escapeHtml(execInfo.result)}</div>
                 });
                 loadMCPServers();
                 loadMCPTools();
+                loadMCPMarketplace();
             } catch (e) {
                 alert('Failed to delete MCP server: ' + e.message);
             }
@@ -3940,6 +3942,150 @@ ${escapeHtml(execInfo.result)}</div>
             } catch (e) {
                 alert('Failed to add MCP server: ' + e.message);
             }
+        }
+
+        // === MCP Marketplace ===
+        let mcpMarketplaceItems = [];
+
+        async function loadMCPMarketplace() {
+            try {
+                const resp = await fetchWithAuth('/api/mcp/marketplace');
+                const data = await resp.json();
+                mcpMarketplaceItems = data.items || [];
+                renderMCPMarketplace();
+            } catch (e) {
+                console.error('Failed to load marketplace:', e);
+                document.getElementById('mcp-marketplace-list').innerHTML =
+                    '<p style="color:var(--text-secondary);">Failed to load marketplace.</p>';
+            }
+        }
+
+        function renderMCPMarketplace() {
+            const container = document.getElementById('mcp-marketplace-list');
+            if (!mcpMarketplaceItems || mcpMarketplaceItems.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-secondary);">No marketplace items available.</p>';
+                return;
+            }
+
+            container.innerHTML = mcpMarketplaceItems.map(item => {
+                const hasBinary = item.install && item.install.binary && item.install.binary.url;
+                const hasArchive = item.install && item.install.archive && item.install.archive.url;
+
+                let installBtn = '';
+                if (item.installed) {
+                    installBtn = '<span style="background:var(--accent-green);color:var(--bg-primary);padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;">INSTALLED</span>';
+                } else if (hasBinary || hasArchive) {
+                    const method = hasBinary ? 'binary' : 'archive';
+                    installBtn = `<button class="btn btn-primary" onclick="installMarketplaceItem('${escapeHtml(item.id)}', '${method}')" style="padding:4px 16px;font-size:12px;">Install</button>`;
+                }
+
+                const tags = (item.tags || []).map(t =>
+                    `<span style="background:var(--bg-tertiary);padding:2px 8px;border-radius:4px;font-size:10px;">${escapeHtml(t)}</span>`
+                ).join(' ');
+
+                return `
+                    <div style="background:var(--bg-primary);padding:14px;border-radius:8px;margin-bottom:8px;border:1px solid var(--border-color);">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                            <div style="flex:1;">
+                                <div style="font-weight:bold;display:flex;align-items:center;gap:8px;">
+                                    ${escapeHtml(item.name)}
+                                    ${item.verified ? '<span style="color:var(--accent-blue);font-size:12px;" title="Verified">✓</span>' : ''}
+                                    <span style="font-size:10px;color:var(--text-secondary);">${escapeHtml(item.version)}</span>
+                                </div>
+                                <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${escapeHtml(item.description)}</div>
+                                <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap;">${tags}</div>
+                            </div>
+                            <div style="margin-left:12px;display:flex;align-items:center;">
+                                ${installBtn}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function installMarketplaceItem(itemId, method) {
+            try {
+                const resp = await fetchWithAuth('/api/mcp/marketplace/install', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ itemId, method })
+                });
+
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    alert('Installation failed: ' + text);
+                    return;
+                }
+
+                const data = await resp.json();
+                const jobId = data.jobId;
+
+                showInstallModal();
+                streamInstallProgress(jobId);
+            } catch (e) {
+                alert('Failed to start installation: ' + e.message);
+            }
+        }
+
+        function showInstallModal() {
+            const modal = document.getElementById('mcp-install-modal');
+            modal.style.display = 'flex';
+            document.getElementById('mcp-install-progress-bar').style.width = '0%';
+            document.getElementById('mcp-install-progress-text').textContent = '0%';
+            document.getElementById('mcp-install-logs').innerHTML = '';
+        }
+
+        function closeInstallModal() {
+            document.getElementById('mcp-install-modal').style.display = 'none';
+        }
+
+        function streamInstallProgress(jobId) {
+            const logsEl = document.getElementById('mcp-install-logs');
+            const barEl = document.getElementById('mcp-install-progress-bar');
+            const textEl = document.getElementById('mcp-install-progress-text');
+
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token') || '';
+            const eventSource = new EventSource(`/api/mcp/marketplace/install-stream?jobId=${encodeURIComponent(jobId)}&token=${encodeURIComponent(token)}`);
+
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.progress !== undefined) {
+                        barEl.style.width = data.progress + '%';
+                        textEl.textContent = data.progress + '%';
+                    }
+
+                    if (data.type === 'log' && data.message) {
+                        const line = document.createElement('div');
+                        line.textContent = data.message;
+                        logsEl.appendChild(line);
+                        logsEl.scrollTop = logsEl.scrollHeight;
+                    }
+
+                    if (data.type === 'done') {
+                        eventSource.close();
+                        if (data.status === 'completed') {
+                            barEl.style.background = 'var(--accent-green)';
+                            textEl.textContent = '100% - Completed!';
+                        } else {
+                            barEl.style.background = 'var(--accent-red)';
+                            textEl.textContent = 'Failed: ' + (data.error || 'Unknown error');
+                        }
+                        loadMCPServers();
+                        loadMCPTools();
+                        loadMCPMarketplace();
+                    }
+                } catch (e) {
+                    console.error('Failed to parse SSE data:', e);
+                }
+            };
+
+            eventSource.onerror = function() {
+                eventSource.close();
+                textEl.textContent = 'Connection lost';
+            };
         }
 
         // === Feature Permissions ===
