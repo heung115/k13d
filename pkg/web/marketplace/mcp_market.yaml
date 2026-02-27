@@ -1,0 +1,67 @@
+version: 1
+items:
+    - id: kubernetes-mcp-server
+      name: Kubernetes MCP Server
+      description: Kubernetes and OpenShift MCP server for cluster management and resource operations
+      homepage: "https://github.com/containers/kubernetes-mcp-server"
+      verified: true
+      tags: ["kubernetes", "openshift", "cluster", "ops"]
+      version: "v0.0.57"
+      install:
+          binary:
+              url: "https://github.com/containers/kubernetes-mcp-server/releases/download/v0.0.57/kubernetes-mcp-server-{os}-{arch}"
+      config:
+          serverName: "kubernetes-mcp-server"
+          args: []
+          env: {}
+
+    - id: github-mcp-server
+      name: GitHub MCP Server
+      description: GitHub's official MCP Server for PR, issues, code search, and repository management
+      homepage: "https://github.com/github/github-mcp-server"
+      verified: true
+      tags: ["github", "git", "code", "pr", "issues"]
+      version: "v0.31.0"
+      install:
+          archive:
+              url: "https://github.com/github/github-mcp-server/releases/download/v0.31.0/github-mcp-server_{OS}_{ARCH}.tar.gz"
+              type: "tar.gz"
+              extractPath: "github-mcp-server"
+      config:
+          serverName: "github-mcp-server"
+          args: ["stdio"]
+          env:
+              # add tocken
+              # GITHUB_PERSONAL_ACCESS_TOKEN: ""
+
+    - id: mcp-filesystem-server
+      name: Filesystem MCP Server
+      description: Go-based MCP server for filesystem operations - read, write, copy, move, delete, search
+      homepage: "https://github.com/mark3labs/mcp-filesystem-server"
+      verified: true
+      tags: ["filesystem", "files", "io"]
+      version: "v0.11.1"
+      install:
+          archive:
+              url: "https://github.com/mark3labs/mcp-filesystem-server/releases/download/v0.11.1/mcp-filesystem-server_{os}_{arch}.tar.gz"
+              type: "tar.gz"
+              extractPath: "mcp-filesystem-server"
+      config:
+          serverName: "mcp-filesystem-server"
+          args: ["/tmp"]
+          env: {}
+
+    - id: ht-mcp
+      name: Headless Terminal MCP Server
+      description: Pure Rust headless terminal MCP server for shell command execution and terminal session management
+      homepage: "https://github.com/memextech/ht-mcp"
+      verified: true
+      tags: ["terminal", "shell", "command"]
+      version: "v0.1.3"
+      install:
+          binary:
+              url: "https://github.com/memextech/ht-mcp/releases/latest/download/ht-mcp-{rust_arch}-{rust_os}"
+      config:
+          serverName: "ht-mcp"
+          args: []
+          env: {}
