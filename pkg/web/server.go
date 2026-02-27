@@ -24,6 +24,7 @@ import (
 	"github.com/cloudbro-kube-ai/k13d/pkg/mcp"
 	"github.com/cloudbro-kube-ai/k13d/pkg/metrics"
 	"github.com/cloudbro-kube-ai/k13d/pkg/security"
+	"github.com/cloudbro-kube-ai/k13d/pkg/web/marketplace"
 )
 
 //go:embed static/*
@@ -76,6 +77,10 @@ type Server struct {
 	// Port forwarding sessions
 	portForwardSessions map[string]*PortForwardSession
 	pfMutex             sync.Mutex
+
+	// MCP Marketplace
+	installJobs *marketplace.InstallJobManager
+	installer   *marketplace.Installer
 }
 
 // PendingToolApproval represents a tool call waiting for user approval
@@ -326,6 +331,11 @@ func newServer(cfg *config.Config, port int, authConfig *AuthConfig, embeddedLLM
 		healingStore:         NewHealingStore(),
 		portForwardSessions:  make(map[string]*PortForwardSession),
 	}
+
+	// Initialize MCP marketplace
+	server.installJobs = marketplace.NewInstallJobManager()
+	server.installer = marketplace.NewInstaller(server)
+	fmt.Printf("  MCP Marketplace: Ready\n")
 
 	server.reportGenerator = NewReportGenerator(server)
 	fmt.Printf("  Reports: Ready\n")
@@ -714,6 +724,11 @@ func (s *Server) Start() error {
 	// MCP server management
 	mux.HandleFunc("/api/mcp/servers", s.authManager.AuthMiddleware(s.handleMCPServers))
 	mux.HandleFunc("/api/mcp/tools", s.authManager.AuthMiddleware(s.handleMCPTools))
+
+	// MCP marketplace
+	mux.HandleFunc("/api/mcp/marketplace", s.authManager.AuthMiddleware(s.handleMCPMarketplace))
+	mux.HandleFunc("/api/mcp/marketplace/install", s.authManager.AuthMiddleware(s.handleMCPMarketplaceInstall))
+	mux.HandleFunc("/api/mcp/marketplace/install-stream", s.authManager.AuthMiddleware(s.handleMCPMarketplaceInstallStream))
 
 	// Kubernetes resources (read-only, RBAC view)
 	mux.HandleFunc("/api/k8s/apply", s.authManager.AuthMiddleware(s.authorizer.AuthzMiddleware("*", ActionApply)(s.handleYamlApply)))
