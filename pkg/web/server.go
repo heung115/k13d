@@ -544,8 +544,8 @@ func requestLoggingMiddleware(next http.Handler) http.Handler {
 		// Process request
 		next.ServeHTTP(rw, r)
 
-		// Log request (exclude health checks to reduce noise)
-		if r.URL.Path != "/api/health" {
+		// Log request (exclude health checks and successful GETs to reduce noise)
+		if r.URL.Path != "/api/health" && (r.Method != http.MethodGet || rw.statusCode >= 400) {
 			duration := time.Since(start)
 			username := r.Header.Get("X-Username")
 			if username == "" {
@@ -875,13 +875,43 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/access/approve/", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.accessRequestManager.HandleApproveAccessRequest)))
 	mux.HandleFunc("/api/access/deny/", s.authManager.AuthMiddleware(s.authManager.AdminMiddleware(s.accessRequestManager.HandleDenyAccessRequest)))
 
-	// Static files
+	// Static files - serve index.html with auth mode injected
 	staticFS, err := fs.Sub(staticFiles, "static")
+	var staticHandler http.Handler
 	if err != nil {
-		mux.Handle("/", http.FileServer(http.Dir("pkg/web/static")))
+		staticHandler = http.FileServer(http.Dir("pkg/web/static"))
 	} else {
-		mux.Handle("/", http.FileServer(http.FS(staticFS)))
+		staticHandler = http.FileServer(http.FS(staticFS))
 	}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// For index.html (root path), inject auth mode as inline script
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			var indexData []byte
+			if err != nil {
+				indexData, _ = os.ReadFile("pkg/web/static/index.html")
+			} else {
+				indexData, _ = fs.ReadFile(staticFiles, "static/index.html")
+			}
+			if indexData != nil {
+				authMode := s.authManager.GetAuthMode()
+				html := string(indexData)
+				// Inject auth mode as JS variable
+				injection := fmt.Sprintf(`<script>window.__AUTH_MODE__=%q;</script>`, authMode)
+				html = strings.Replace(html, "</head>", injection+"</head>", 1)
+				// Directly show the correct login form via inline style (no JS dependency)
+				if authMode == "local" {
+					html = strings.Replace(html, `id="password-login-form" class="login-form"`, `id="password-login-form" class="login-form" style="display:block"`, 1)
+				} else {
+					html = strings.Replace(html, `id="token-login-form" class="login-form"`, `id="token-login-form" class="login-form" style="display:block"`, 1)
+				}
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				_, _ = w.Write([]byte(html))
+				return
+			}
+		}
+		staticHandler.ServeHTTP(w, r)
+	})
 
 	// Apply middleware chain: recovery -> request logging -> rate limiting -> body limit -> timeout -> security headers -> CORS -> CSRF -> handler
 	handler := recoveryMiddleware(
