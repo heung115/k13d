@@ -12,7 +12,7 @@ items:
               url: "https://github.com/containers/kubernetes-mcp-server/releases/download/v0.0.57/kubernetes-mcp-server-{os}-{arch}"
       config:
           serverName: "kubernetes-mcp-server"
-          args: []
+          args: ["--stateless"]
           env: {}
 
     - id: github-mcp-server
