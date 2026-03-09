@@ -2156,7 +2156,7 @@ async function sendMessageAgentic(message) {
     div.id = 'streaming-message';
     div.innerHTML = `<div class="message-content"><span class="cursor">▊</span></div>`;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    aiForceScrollToBottom();
 
     const contentEl = div.querySelector('.message-content');
     let fullContent = '';
@@ -2266,7 +2266,7 @@ async function sendMessageAgentic(message) {
                     formatted = formatted.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
                     formatted = formatted.replace(/\n/g, '<br>');
                     contentEl.innerHTML = formatted + '<span class="cursor">▊</span>';
-                    container.scrollTop = container.scrollHeight;
+                    aiScrollToBottom();
 
                     currentEventType = null;
                 }
@@ -2352,8 +2352,7 @@ ${escapeHtml(execInfo.result)}</div>
 
     // Insert tool execution before the content element (AI response text)
     messageDiv.insertBefore(execDiv, contentEl);
-    const container = document.getElementById('ai-messages');
-    container.scrollTop = container.scrollHeight;
+    aiScrollToBottom();
 
     // Log to debug panel
     addDebugLog('tool', 'Tool Executed', {
@@ -2463,7 +2462,7 @@ async function respondToApproval(approved) {
             ? `<span class="tool-name">✓ Approved:</span> Command execution proceeding...`
             : `<span class="tool-name" style="color: var(--accent-red)">✕ Rejected:</span> Command was cancelled by user.`;
         container.appendChild(statusDiv);
-        container.scrollTop = container.scrollHeight;
+        aiScrollToBottom();
 
         // Auto-remove the status message after 5 seconds
         setTimeout(() => {
@@ -2495,7 +2494,11 @@ function addMessage(content, isUser = false) {
 
     div.innerHTML = `<div class="message-content">${formatted}</div>`;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    if (isUser) {
+        aiForceScrollToBottom();
+    } else {
+        aiScrollToBottom();
+    }
 }
 
 function addLoadingMessage() {
@@ -2505,13 +2508,66 @@ function addLoadingMessage() {
     div.id = 'loading-message';
     div.innerHTML = `<div class="message-content"><div class="loading-dots"><span></span><span></span><span></span></div></div>`;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+    aiScrollToBottom();
 }
 
 function removeLoadingMessage() {
     const loading = document.getElementById('loading-message');
     if (loading) loading.remove();
 }
+
+// AI messages auto-scroll state
+let aiAutoScroll = true;
+const AI_SCROLL_STEP = 60; // pixels per arrow key press
+
+function aiScrollToBottom() {
+    if (!aiAutoScroll) return;
+    const container = document.getElementById('ai-messages');
+    if (container) container.scrollTop = container.scrollHeight;
+}
+
+function aiForceScrollToBottom() {
+    const container = document.getElementById('ai-messages');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+        aiAutoScroll = true;
+    }
+}
+
+// Detect manual scroll to toggle auto-scroll
+(function initAiScrollListener() {
+    const container = document.getElementById('ai-messages');
+    if (!container) return;
+    container.addEventListener('scroll', () => {
+        const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 30;
+        aiAutoScroll = atBottom;
+    });
+    // Arrow key scrolling on the messages container
+    container.setAttribute('tabindex', '-1');
+    container.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            container.scrollTop -= AI_SCROLL_STEP;
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            container.scrollTop += AI_SCROLL_STEP;
+        } else if (e.key === 'PageUp') {
+            e.preventDefault();
+            container.scrollTop -= container.clientHeight;
+        } else if (e.key === 'PageDown') {
+            e.preventDefault();
+            container.scrollTop += container.clientHeight;
+        } else if (e.key === 'Home') {
+            e.preventDefault();
+            container.scrollTop = 0;
+            aiAutoScroll = false;
+        } else if (e.key === 'End') {
+            e.preventDefault();
+            container.scrollTop = container.scrollHeight;
+            aiAutoScroll = true;
+        }
+    });
+})();
 
 // AI input query history
 let aiQueryHistory = JSON.parse(localStorage.getItem('k13d_query_history') || '[]');
@@ -2936,6 +2992,9 @@ async function testLLMConnection() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(testConfig)
         });
+        if (!resp.ok) {
+            throw new Error(`Server error (${resp.status})`);
+        }
         const status = await resp.json();
 
         if (status.connected) {
@@ -3073,7 +3132,7 @@ function disableLLMSettings(disabled, message) {
     }
 }
 
-function updateEndpointPlaceholder() {
+function updateEndpointPlaceholder(setDefaults = true) {
     const provider = document.getElementById('setting-llm-provider').value;
     const endpointInput = document.getElementById('setting-llm-endpoint');
     const hint = document.getElementById('endpoint-hint');
@@ -3092,18 +3151,17 @@ function updateEndpointPlaceholder() {
     endpointInput.placeholder = config.placeholder;
     hint.textContent = config.hint;
 
-    // Update model value and placeholder when switching providers
+    // Update model placeholder; only overwrite value when user switches provider
     const modelInput = document.getElementById('setting-llm-model');
     if (modelInput) {
         modelInput.placeholder = config.model || '';
-        // Always set model to provider default when switching
-        if (config.model) {
+        if (setDefaults && config.model) {
             modelInput.value = config.model;
         }
     }
 
-    // Always set endpoint to provider default when switching
-    if (config.placeholder) {
+    // Only overwrite endpoint value when user switches provider
+    if (setDefaults && config.placeholder) {
         endpointInput.value = config.placeholder;
     }
 
@@ -3238,6 +3296,7 @@ async function loadModelProfiles() {
                             <div style="font-weight:bold;display:flex;align-items:center;gap:8px;">
                                 ${escapeHtml(m.name)}
                                 ${m.is_active ? '<span style="background:var(--accent-green);color:var(--bg-primary);padding:2px 8px;border-radius:4px;font-size:10px;">ACTIVE</span>' : ''}
+                                ${m.skip_tls_verify ? '<span style="background:var(--accent-yellow);color:var(--bg-primary);padding:2px 6px;border-radius:4px;font-size:10px;">TLS Skip</span>' : ''}
                             </div>
                             <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
                                 ${escapeHtml(m.provider)} / ${escapeHtml(m.model)} ${m.description ? '- ' + escapeHtml(m.description) : ''}
@@ -3256,27 +3315,42 @@ async function loadModelProfiles() {
 
 async function switchModel(name) {
     try {
-        await fetchWithAuth('/api/models/active', {
+        const resp = await fetchWithAuth('/api/models/active', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
         });
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            showToast(errData.error || 'Failed to switch model', 'error');
+            return;
+        }
+        // Reload both profile list AND LLM form fields to stay in sync
         loadModelProfiles();
-        alert('Switched to model: ' + name);
+        loadSettings();
+        showToast('Switched to model: ' + name, 'success');
     } catch (e) {
-        alert('Failed to switch model: ' + e.message);
+        showToast('Failed to switch model: ' + e.message, 'error');
     }
 }
 
 async function deleteModel(name) {
     if (!confirm('Delete model profile "' + name + '"?')) return;
     try {
-        await fetchWithAuth('/api/models?name=' + encodeURIComponent(name), {
+        const resp = await fetchWithAuth('/api/models?name=' + encodeURIComponent(name), {
             method: 'DELETE'
         });
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            showToast(errData.error || 'Failed to delete model', 'error');
+            return;
+        }
+        // Reload profiles and settings (active model may have changed)
         loadModelProfiles();
+        loadSettings();
+        showToast('Deleted model: ' + name, 'success');
     } catch (e) {
-        alert('Failed to delete model: ' + e.message);
+        showToast('Failed to delete model: ' + e.message, 'error');
     }
 }
 
@@ -3292,6 +3366,7 @@ function hideAddModelForm() {
     document.getElementById('new-model-endpoint').value = '';
     document.getElementById('new-model-apikey').value = '';
     document.getElementById('new-model-description').value = '';
+    document.getElementById('new-model-skip-tls').checked = false;
 }
 
 async function addModelProfile() {
@@ -3301,24 +3376,31 @@ async function addModelProfile() {
         model: document.getElementById('new-model-model').value.trim(),
         endpoint: document.getElementById('new-model-endpoint').value.trim(),
         api_key: document.getElementById('new-model-apikey').value,
-        description: document.getElementById('new-model-description').value.trim()
+        description: document.getElementById('new-model-description').value.trim(),
+        skip_tls_verify: document.getElementById('new-model-skip-tls').checked
     };
 
     if (!profile.name || !profile.model) {
-        alert('Name and Model are required');
+        showToast('Name and Model are required', 'error');
         return;
     }
 
     try {
-        await fetchWithAuth('/api/models', {
+        const resp = await fetchWithAuth('/api/models', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(profile)
         });
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            showToast(errData.error || 'Failed to add model', 'error');
+            return;
+        }
         hideAddModelForm();
         loadModelProfiles();
+        showToast('Added model: ' + profile.name, 'success');
     } catch (e) {
-        alert('Failed to add model: ' + e.message);
+        showToast('Failed to add model: ' + e.message, 'error');
     }
 }
 
@@ -3918,8 +4000,8 @@ async function loadSettings() {
             const defaults = {
                 'upstage': { model: 'solar-pro2', endpoint: 'https://api.upstage.ai/v1' },
                 'openai': { model: 'gpt-4', endpoint: 'https://api.openai.com/v1' },
-                'ollama': { model: 'qwen2.5:3b', endpoint: 'http://localhost:11434' },
-                'gemini': { model: 'gemini-pro', endpoint: 'https://generativelanguage.googleapis.com/v1beta' },
+                'ollama': { model: 'llama3', endpoint: 'http://localhost:11434' },
+                'gemini': { model: 'gemini-2.5-flash', endpoint: 'https://generativelanguage.googleapis.com/v1beta' },
                 'anthropic': { model: 'claude-3-opus', endpoint: 'https://api.anthropic.com' }
             };
             const providerDefaults = defaults[provider] || { model: '', endpoint: '' };
@@ -3940,8 +4022,8 @@ async function loadSettings() {
             document.getElementById('setting-llm-endpoint').value = 'https://api.upstage.ai/v1';
             currentLLMModel = 'solar-pro2';
         }
-        // Update endpoint placeholder based on current provider
-        updateEndpointPlaceholder();
+        // Update endpoint placeholder/hints without overwriting loaded values
+        updateEndpointPlaceholder(false);
         // Load local settings
         updateSettingsUI();
         // Update AI panel status
@@ -6685,7 +6767,11 @@ function addMessageToDOM(content, isUser, scroll = true) {
     container.appendChild(div);
 
     if (scroll) {
-        container.scrollTop = container.scrollHeight;
+        if (isUser) {
+            aiForceScrollToBottom();
+        } else {
+            aiScrollToBottom();
+        }
     }
 }
 
@@ -7046,7 +7132,7 @@ function useOllamaModel() {
     document.getElementById('setting-llm-endpoint').value = 'http://localhost:11434';
     document.getElementById('setting-llm-apikey').value = '';
 
-    updateEndpointPlaceholder();
+    updateEndpointPlaceholder(false);
     showToast(`Configured to use Ollama model: ${selectedOllamaModel}`, 'success');
 }
 
@@ -10190,21 +10276,22 @@ function showApplicationsView() {
 async function loadApplicationsData() {
     const body = document.getElementById('applications-body');
     const ns = document.getElementById('apps-ns-select')?.value || '';
-    body.innerHTML = '<div class="loading-placeholder">Loading applications...</div>';
+    body.innerHTML = '<div class="loading-placeholder">' + t('msg_loading_applications') + '</div>';
     try {
         const params = ns ? `?namespace=${encodeURIComponent(ns)}` : '';
         const resp = await fetchWithAuth(`/api/applications${params}`);
         const apps = await resp.json();
         if (!apps || apps.length === 0) {
-            body.innerHTML = '<div class="loading-placeholder">No applications found.</div>';
+            body.innerHTML = '<div class="loading-placeholder">' + t('msg_no_apps') + '</div>';
             return;
         }
-        body.innerHTML = `<div class="apps-grid">${apps.map(app => {
+        window.appsData = apps;
+        body.innerHTML = `<div class="apps-grid">${apps.map((app, idx) => {
             const resourceChips = Object.entries(app.resources || {}).map(([kind, items]) =>
                 `<span class="app-resource-chip">${escapeHtml(kind)} (${items.length})</span>`
             ).join('');
             return `
-                        <div class="app-card">
+                        <div class="app-card" onclick="showAppDetail(${idx})">
                             <div class="app-card-header">
                                 <span class="app-card-name">${escapeHtml(app.name)}</span>
                                 <span class="app-card-badge ${app.status || 'healthy'}">${escapeHtml(app.status || 'healthy')}</span>
@@ -10220,6 +10307,55 @@ async function loadApplicationsData() {
     } catch (e) {
         body.innerHTML = `<div class="loading-placeholder" style="color:var(--accent-red);">Failed to load applications: ${escapeHtml(e.message)}</div>`;
     }
+}
+
+function showAppDetail(index) {
+    const app = (window.appsData || [])[index];
+    if (!app) return;
+    document.getElementById('app-detail-title').textContent = app.name;
+    let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+        <span class="app-card-badge ${app.status || 'healthy'}" style="font-size:13px;">${escapeHtml(app.status || 'healthy')}</span>
+        ${app.version ? `<span style="color:var(--text-secondary);font-size:13px;">v${escapeHtml(app.version)}</span>` : ''}
+        ${app.component ? `<span style="color:var(--text-secondary);font-size:13px;">${escapeHtml(app.component)}</span>` : ''}
+    </div>`;
+    if (app.podCount !== undefined) {
+        html += `<div style="margin-bottom:16px;padding:12px;background:var(--bg-tertiary);border-radius:8px;">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--text-primary);">Pods</div>
+            <div style="font-size:24px;font-weight:700;color:var(--accent-blue);">${app.readyPods || 0} / ${app.podCount}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">ready</div>
+        </div>`;
+    }
+    const resources = app.resources || {};
+    const kinds = Object.keys(resources);
+    if (kinds.length > 0) {
+        html += `<div style="font-weight:600;margin-bottom:8px;color:var(--text-primary);">${t('header_resources')}</div>`;
+        kinds.forEach(kind => {
+            const items = resources[kind] || [];
+            html += `<div style="margin-bottom:12px;">
+                <div style="font-size:13px;font-weight:600;color:var(--accent-blue);margin-bottom:4px;">${escapeHtml(kind)} (${items.length})</div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead><tr style="border-bottom:1px solid var(--border-color);">
+                        <th style="text-align:left;padding:4px 8px;color:var(--text-secondary);">${t('th_name')}</th>
+                        <th style="text-align:left;padding:4px 8px;color:var(--text-secondary);">${t('th_namespace')}</th>
+                        <th style="text-align:left;padding:4px 8px;color:var(--text-secondary);">${t('th_status')}</th>
+                    </tr></thead><tbody>`;
+            items.forEach(item => {
+                const statusClass = (item.status || '').toLowerCase() === 'running' || (item.status || '').toLowerCase() === 'active' || (item.status || '').toLowerCase() === 'ready' ? 'color:var(--accent-green)' : (item.status || '').toLowerCase() === 'failed' ? 'color:var(--accent-red)' : 'color:var(--text-secondary)';
+                html += `<tr style="border-bottom:1px solid var(--border-subtle);">
+                    <td style="padding:4px 8px;color:var(--text-primary);">${escapeHtml(item.name || '')}</td>
+                    <td style="padding:4px 8px;color:var(--text-secondary);">${escapeHtml(item.namespace || '')}</td>
+                    <td style="padding:4px 8px;${statusClass};">${escapeHtml(item.status || '-')}</td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        });
+    }
+    document.getElementById('app-detail-body').innerHTML = html;
+    document.getElementById('app-detail-overlay').classList.add('active');
+}
+
+function closeAppDetail() {
+    document.getElementById('app-detail-overlay').classList.remove('active');
 }
 
 // ============================

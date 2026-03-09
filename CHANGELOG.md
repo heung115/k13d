@@ -5,6 +5,45 @@ All notable changes to k13d will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.1] - 2026-03-09
+
+### Added
+- **System Stability**: Added global panic handler in the TUI to gracefully restore terminal state on crash.
+- **Code Modularity**: Massively refactored large monoline files (`pkg/ui/app.go` and `pkg/web/reports.go`) into smaller, modular domain-specific files (`app_layout.go`, `app_events.go`, `reports_security.go`, etc.) to improve long-term maintainability.
+- **Health Check**: Validated and improved the `/api/health` system status endpoint in Web UI for better uptime monitoring readiness.
+
+### Changed
+- **Testing**: Improved test coverage across `pkg/ui` and `pkg/web` packages. Codebase is completely passing all unit and integration tests under `-short` mode.
+
+## [0.9.7] - 2026-03-08
+
+### Fixed
+- **Web UI: Settings revert bug**: Fixed `updateEndpointPlaceholder()` overwriting saved provider/model/endpoint values when reopening Settings modal or selecting Ollama model from Quick Setup
+- **Web UI: Model profile switch sync**: `switchModel()` now reloads LLM form fields after switching, keeping Settings form in sync with active profile
+- **Web UI: Model deletion sync**: `deleteModel()` now reloads Settings form and uses toast notifications instead of browser alerts
+- **Web UI: Consistent error feedback**: Replaced `alert()` with `showToast()` in `addModelProfile()` and `deleteModel()` for consistent UX
+- **Web UI: Response validation**: Added `resp.ok` checks in `switchModel()`, `deleteModel()`, `addModelProfile()`, and `testLLMConnection()` to properly handle server errors
+- **Web UI: Default values mismatch**: Unified fallback defaults between `loadSettings()` and `updateEndpointPlaceholder()` (ollama model, gemini model)
+- **Backend: LLM settings validation**: Added required field validation for provider/model in `handleLLMSettings` to prevent config corruption from empty values
+- **Backend: Embedded LLM protection**: `handleLLMSettings` now returns 403 when embedded LLM is active, preventing settings changes that would break the embedded server
+- **Backend: Race condition in LLM response**: Response values in `handleLLMSettings` are now captured under mutex before unlock, preventing data races with concurrent model switches
+- **Backend: Model deletion DB sync**: `handleModels` DELETE now calls `db.DeleteModelProfile()` to keep SQLite in sync with YAML config
+- **Backend: Active model DB sync**: `handleActiveModel` PUT now calls `db.SetActiveModelProfile()` to update the `is_active` flag in SQLite
+- **Backend: Last model deletion**: `RemoveModelProfile()` now clears `ActiveModel` when the last profile is deleted, instead of leaving a stale reference
+- **Backend: Consistent logging**: Replaced `fmt.Printf("Warning: ...")` with `log.Warnf()` across settings handlers for proper structured logging
+
+## [0.9.6] - 2026-03-01
+
+### Added
+- **Web UI: Application Detail Modal**: Clicking an app card now opens a detail modal showing status badge, version, component, pod count, and a resource table grouped by kind (Name/Namespace/Status)
+- **Web UI: i18n Support**: Added `data-i18n` attributes to ~40 sidebar nav items, section headers, and view titles — changing language in Settings now updates the entire UI in real-time (English, Korean, Chinese, Japanese)
+- **i18n: New Translation Keys**: Added translations for all nav items (Overview, Topology, Applications, RBAC Viewer, Net Policy Map, Event Timeline, Metrics, Audit Logs, Reports, NetworkPolicies, ServiceAccounts, Roles, RoleBindings, ClusterRoles, ClusterRoleBindings), section headers (RBAC, Visualization, Monitoring), and application view messages
+
+### Tests
+- Added `TestHandleApplications_MultiResourceTypes`: Verifies StatefulSet, DaemonSet, Ingress, Service grouping under same `app.kubernetes.io/name` label
+- Added `TestHandleApplications_HealthStatus`: Verifies healthy/degraded/failing status calculation based on pod readiness
+- Added `TestHandleApplications_NamespaceFilter`: Verifies `?namespace=X` query parameter correctly filters applications
+
 ## [0.9.5] - 2026-03-01
 
 ### Fixed

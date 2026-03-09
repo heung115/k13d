@@ -10,6 +10,8 @@ import (
 	"github.com/cloudbro-kube-ai/k13d/pkg/ai"
 	"github.com/cloudbro-kube-ai/k13d/pkg/config"
 	"github.com/cloudbro-kube-ai/k13d/pkg/db"
+	"github.com/cloudbro-kube-ai/k13d/pkg/i18n"
+	"github.com/cloudbro-kube-ai/k13d/pkg/log"
 )
 
 // ==========================================
@@ -117,6 +119,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.cfg.LogLevel = newSettings.LogLevel
 		s.aiMu.Unlock()
 
+		// Apply language change to i18n system
+		i18n.SetLanguage(newSettings.Language)
+
 		// Save to YAML
 		if err := s.cfg.Save(); err != nil {
 			WriteErrorSimple(w, http.StatusInternalServerError, "Failed to save settings")
@@ -132,7 +137,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			dbSettings["general.timezone"] = newSettings.Timezone
 		}
 		if err := db.SaveWebSettings(dbSettings); err != nil {
-			fmt.Printf("Warning: failed to save settings to SQLite: %v\n", err)
+			log.Warnf("Failed to save settings to SQLite: %v", err)
 		}
 
 		// Record audit
@@ -165,13 +170,14 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		models := make([]map[string]interface{}, len(s.cfg.Models))
 		for i, m := range s.cfg.Models {
 			models[i] = map[string]interface{}{
-				"name":        m.Name,
-				"provider":    m.Provider,
-				"model":       m.Model,
-				"endpoint":    m.Endpoint,
-				"description": m.Description,
-				"has_api_key": m.APIKey != "",
-				"is_active":   m.Name == s.cfg.ActiveModel,
+				"name":            m.Name,
+				"provider":        m.Provider,
+				"model":           m.Model,
+				"endpoint":        m.Endpoint,
+				"description":     m.Description,
+				"has_api_key":     m.APIKey != "",
+				"is_active":       m.Name == s.cfg.ActiveModel,
+				"skip_tls_verify": m.SkipTLSVerify,
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -225,6 +231,11 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		if err := s.cfg.Save(); err != nil {
 			WriteErrorSimple(w, http.StatusInternalServerError, "Failed to save config")
 			return
+		}
+
+		// Sync deletion to SQLite
+		if err := db.DeleteModelProfile(name); err != nil {
+			log.Warnf("Failed to delete model profile from SQLite: %v", err)
 		}
 
 		// Record audit
@@ -285,6 +296,13 @@ func (s *Server) handleActiveModel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.aiClient = newClient
+
+		// Capture config values under lock before releasing
+		activeModel := s.cfg.ActiveModel
+		llmProvider := s.cfg.LLM.Provider
+		llmModel := s.cfg.LLM.Model
+		llmEndpoint := s.cfg.LLM.Endpoint
+		llmAPIKey := s.cfg.LLM.APIKey
 		s.aiMu.Unlock()
 
 		// Re-register MCP tools
@@ -295,6 +313,24 @@ func (s *Server) handleActiveModel(w http.ResponseWriter, r *http.Request) {
 		if err := s.cfg.Save(); err != nil {
 			WriteErrorSimple(w, http.StatusInternalServerError, "Failed to save config")
 			return
+		}
+
+		// Also persist LLM settings to SQLite so DB stays in sync after restart
+		llmDBSettings := map[string]string{
+			"llm.active_model": activeModel,
+			"llm.provider":     llmProvider,
+			"llm.model":        llmModel,
+			"llm.endpoint":     llmEndpoint,
+		}
+		if llmAPIKey != "" {
+			llmDBSettings["llm.api_key"] = llmAPIKey
+		}
+		if err := db.SaveWebSettings(llmDBSettings); err != nil {
+			log.Warnf("Failed to save model switch to SQLite: %v", err)
+		}
+		// Update active flag in model_profiles table
+		if err := db.SetActiveModelProfile(req.Name); err != nil {
+			log.Warnf("Failed to update active model profile in SQLite: %v", err)
 		}
 
 		// Record audit
